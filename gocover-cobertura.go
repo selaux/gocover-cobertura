@@ -57,20 +57,26 @@ func main() {
 }
 
 func convert(in io.Reader, out io.Writer, ignore *Ignore) error {
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("Start: %v", time.Now().UTC()))
+
 	profiles, err := ParseProfiles(in, ignore)
 	if err != nil {
 		return err
 	}
+
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("ParseProfiles (%v): %v", len(profiles), time.Now().UTC()))
 
 	pkgs, err := getPackages(profiles)
 	if err != nil {
 		return err
 	}
 
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("getPackages (%v): %v", len(pkgs), time.Now().UTC()))
+
 	sources := make([]*Source, 0)
 	pkgMap := make(map[string]*packages.Package)
 	for _, pkg := range pkgs {
-		sources = appendIfUnique(sources, pkg.Module.Dir)
+		sources = appendIfUnique(sources, &Source{pkg.Module.Dir})
 		pkgMap[pkg.ID] = pkg
 	}
 
@@ -78,6 +84,8 @@ func convert(in io.Reader, out io.Writer, ignore *Ignore) error {
 	if err := coverage.parseProfiles(profiles, pkgMap, ignore); err != nil {
 		return err
 	}
+
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("coverage.parseProfiles: %v", time.Now().UTC()))
 
 	_, _ = fmt.Fprint(out, xml.Header)
 	_, _ = fmt.Fprintln(out, coberturaDTDDecl)
@@ -89,6 +97,9 @@ func convert(in io.Reader, out io.Writer, ignore *Ignore) error {
 	}
 
 	_, _ = fmt.Fprintln(out)
+
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("encode: %v", time.Now().UTC()))
+
 	return nil
 }
 
@@ -99,18 +110,18 @@ func getPackages(profiles []*Profile) ([]*packages.Package, error) {
 
 	var pkgNames []string
 	for _, profile := range profiles {
-		pkgNames = append(pkgNames, getPackageName(profile.FileName))
+		pkgNames = appendIfUnique(pkgNames, getPackageName(profile.FileName))
 	}
-	return packages.Load(&packages.Config{Mode: packages.NeedFiles | packages.NeedModule}, pkgNames...)
+	return packages.Load(&packages.Config{Mode: packages.NeedFiles | packages.NeedModule}, "./...")
 }
 
-func appendIfUnique(sources []*Source, dir string) []*Source {
-	for _, source := range sources {
-		if source.Path == dir {
-			return sources
+func appendIfUnique[T comparable](slice []T, val T) []T {
+	for _, p := range slice {
+		if p == val {
+			return slice
 		}
 	}
-	return append(sources, &Source{dir})
+	return append(slice, val)
 }
 
 func getPackageName(filename string) string {
